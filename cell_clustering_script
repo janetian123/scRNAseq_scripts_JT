@@ -1,0 +1,355 @@
+---
+title: "ITM_T_subcluster_annotations"
+author: "Jane Tian"
+date: "2023-08-21"
+output: html_document
+---
+
+```{r}
+set.seed(999)
+#setwd("F:/ITM_data/single_cell")
+```
+
+```{r}
+library(tidyverse)
+library(MAST)
+library(harmony)
+library(Seurat) 
+library(ggplot2) 
+library(dittoSeq) 
+library(RColorBrewer)
+library(miloR)
+library(scater)
+library(scran)
+library(dplyr)
+library(patchwork)
+```
+
+```{r}
+seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
+T_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Tcell"))
+T_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Tcells_V2.rds")
+DefaultAssay(T_obj) <- "RNA"
+```
+
+```{r}
+#reso_range <- c(seq(0.2, 1.6, 0.2))
+#T_obj <- FindClusters(T_obj, resolution = reso_range, graph.name = "subcluster")
+Idents(T_obj) <- "subcluster_res.0.6"
+T.umap <- DimPlot(T_obj, reduction = "subcluster.umap", label = TRUE)
+```
+
+```{r}
+T_feature <- FeaturePlot(T_obj, features = c("CD3E", "CD3D", "CD3G", "CD4", "ADT.CD4.RPA.T4", "CD8A", "ADT.CD8"), pt.size = 0.5)
+umap <- DimPlot(T_obj, reduction = "subcluster.umap", label = TRUE)
+
+plot <- umap + T_feature
+ggsave(plot, file = paste0("plots/tcells/T_featureplot.png"), width = 30, height = 16)
+```
+
+```{r}
+#features plot
+Tcell_features <- FeaturePlot(T_obj, features = c("ADT.CD3.UCHT1","FOXP3","ADT.CD25","ADT.CD8","CD8A","ADT.CD4.RPA.T4","CD4","IFNG","CXCL13","PDCD1","ADT.CD45RO","ADT.CX3CR1","ADT.CD39","ADT.CD279","CTLA4","HAVCR2","XCL1","GZMB","TRBC1","TRDC","TRGC1","TRAC","ADT.TCR.AB","ADT.TCR.Va7.2","ADT.HLA.DR","ADT.GPR56","ADT.CD103","ADT.LOX.1"), pt.size = 0.5)
+ggsave(Tcell_features, file = paste0("plots/tcells/featureplot.png"), width = 14, height = 20)
+```
+
+```{r}
+plot <- VlnPlot(T_obj, features = c("ADT.CD3.UCHT1","FOXP3","ADT.CD25","ADT.CD8","CD8A","ADT.CD4.RPA.T4","CD4","IFNG","CXCL13","PDCD1","ADT.CD45RO","ADT.CX3CR1","ADT.CD39","ADT.CD279","CTLA4","HAVCR2","XCL1","GZMB","TRBC1","TRDC","TRGC1","TRAC","ADT.TCR.AB","ADT.TCR.Va7.2","ADT.HLA.DR","ADT.GPR56","ADT.CD103","ADT.LOX.1"),pt.size = 0, group.by = "subcluster_res.0.6")
+ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 14, height = 20)
+```
+
+########################################################
+```{r}
+# Violin plots focusing on C_08
+plot <- VlnPlot(T_obj, features = c("CD44","EGFR","MMP2","MMP9", "VEGF", "PRKCA", "PIK3CA", "AKT1", "HIF1A"), split.by = "Group_3_Resistance_vs_Non.resistance", pt.size = 0.5, group.by = "subcluster_res.0.6")
+plot
+ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 30, height = 20)
+```
+########################################################
+
+```{r}
+#features plot_CD8
+CD8_Tcell_features <- FeaturePlot(T_obj, features = c("CD69", "IL2RA", "ADT. CD25", "GZMB", "PRF1", "PTPRC", "ADT.CD45RA", "ADT.CD45RO", "ADT.CD62L", "SELL", "CCR7", "TCF7", "PDCD1", "HAVCR2", "LAG3", "TOX", "TOX2", "TIGIT", "VCAM1", "APOE", "APOD"), pt.size = 0.5)
+# CD8_Tcell_features_ex.markers <- FeaturePlot(T_obj, features = c("PDCD1", "HAVCR2", "LAG3"), split.by = "Group_3_Resistance_vs_Non.resistance", pt.size = 0.5)
+
+ggsave(CD8_Tcell_features, file = paste0("plots/tcells/CD8.featureplot.png"), width = 22, height = 20)
+# ggsave(CD8_Tcell_features_ex.markers, file = paste0("plots/tcells/CD8.featureplot.ex.png"), width = 22, height = 20)
+
+```
+
+```{r}
+CD4_Tcell_features <- FeaturePlot(T_obj, features = c("TBX21", "IFNG", "GATA3", "IL4", "RORC", "IL17A", "FOXP3", "IL2RA", "BCL6", "CXCR5", "IL21", "CCR7", "PDCD1", "ICOS", "SH2D1A"), pt.size = 0.5)
+ggsave(CD4_Tcell_features, file = paste0("plots/tcells/CD4.featureplot.png"), width = 22, height = 18)
+```
+
+```{r}
+other_Tcell_features <- FeaturePlot(T_obj, features = c("TRAC", "TRBC1", "TRDC", "TRGC1", "ADT.TCR.Va7.2", "ADT.TCR.AB", ".ADT.TCR.Vd2", "NCAM1"), pt.size = 0.5)
+ggsave(other_Tcell_features, file = paste0("plots/tcells/other.featureplot.png"), width = 22, height = 14)
+```
+
+```{r}
+# Define custom markers for 0.6 AFTER features/violin plot
+mast_T <- FindAllMarkers(T_obj, test.use = "MAST", only.pos = T)
+write.csv(mast_T, file = "mast_DGE_T_cells_res0.6.csv")
+mast_T_top30 <- mast_T %>%
+                group_by(cluster) %>%
+                top_n(n = 30, wt = avg_log2FC)
+write.csv(mast_T_top30, file = "mast_T_obj_top30_res0.6.csv")
+```
+
+```{r}
+mast_T_top5 <- mast_T %>%
+                group_by(cluster) %>%
+                top_n(n = 5, wt = avg_log2FC)
+T_hmap <- DoHeatmap(T_obj, features = mast_T_top5$gene) + scale_fill_gradient2(low = rev(c('#045c44','#023824','#07291c')), mid = "#93c9b5", high = rev(c('#d19d3d','#e8c868','#f2e8b6')), midpoint = 0, guide = "colourbar") + theme(text = element_text(size = 12), legend.text = element_text(size = 15))
+ggsave(T_hmap, file = paste0("plots/tcells/T_cells_hmap_res0.6.png"), width = 12, height = 10)
+```
+
+```{r}
+mast_T_top5 <- mast_T %>%
+                group_by(cluster) %>%
+                top_n(n = 5, wt = avg_log2FC)
+T_hmap <- DoHeatmap(T_obj, features = mast_T_top5$gene) + theme(text = element_text(size = 12), legend.text = element_text(size = 15))
+ggsave(T_hmap, file = paste0("plots/tcells/T_cells_hmap_res0.6_de.png"), width = 12, height = 12)
+```
+
+```{r}
+#annotation manually and load in .csv file ###
+Idents(T_obj) <- "subcluster_res.0.6"
+name_sheet <- read.csv(file = "ITM_cluster_names_tcells_CJ.csv", header = T, sep = ",", row.names = 1)
+to <- as.character(name_sheet$subset) # changing to
+names(to) <- as.character(name_sheet$subcluster_res.0.6) # changing from
+T_obj <- RenameIdents(T_obj, to) # rename
+T_obj[["subset"]] <- Idents(object = T_obj)
+# cols <- DiscretePalette(12, palette = "stepped", shuffle = F)
+T.umap <- DimPlot(T_obj, reduction = "subcluster.umap", pt.size = 0.5, cols = "Paired", label = F, label.size = 7) + theme(legend.text = element_text(size = 20), axis.title = element_text(size = 25), axis.text = element_text(size = 25))
+ggsave("plots/tcells/T.umap.jpeg", T.umap, width = 20, height = 12)
+```
+
+```{r}
+# Draw dotplot
+Clustered_DotPlot(seurat_object = T_obj_PRE, features = mast_T_top5$gene, colors_use_exp = BlueAndRed(), exp_color_min = -2, exp_color_max = 2)
+ggsave(filename = "F:Jane/Fig.1/Figure_1b.png", width = 18, height = 12)
+```
+
+```{r}
+DimPlot(T_obj, reduction = "subcluster.umap", split.by = "Group_3_Resistance_vs_Non.resistance")
+T_obj@meta.data$T_subcluster.anno <- Idents(T_obj)
+T_bar <- dittoBarPlot(object = T_obj, var = "T_subcluster.anno", group.by = "SAMPLE_ID", scale = "percent", split.ncol = 2, main="T_subclusters")
+ggsave(T_bar, file = paste0("plots/tcells/T_cells_stackedbar.png"), width = 13, height = 10)
+
+---
+title: "ITM_Myeloid_subcluster_annotations"
+author: "Jane Tian"
+date: "2023-08-21"
+output: html_document
+---
+```{r}
+# seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
+# Myeloid_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
+M_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Mcells.rds")
+M_obj.PRE <- subset(M_obj, TREATMENT_TIME %in% "PRE")
+M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$SAMPLE_ID %in% c("PUB1077262", "PUB1097427")]
+M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$subcluster_res.0.6 %in% c("4")]
+DefaultAssay(M_obj.PRE) <- "RNA"
+
+```
+
+```{r}
+#reso_range <- c(seq(0.2, 1.6, 0.2))
+# Myeloid_obj <- RunUMAP(Myeloid_obj, reduction = "harmony", dims = 1:20, reduction.name = "subcluster.umap", reduction.key = "harmonyUMAP_")
+# Myeloid_obj <- FindClusters(Myeloid_obj, resolution = reso_range, graph.name = "subcluster")
+Idents(M_obj.PRE) <- "subcluster_res.0.6"
+svg("Myeloid_umap.svg")
+DimPlot(M_obj.PRE, 
+        reduction = "subcluster.umap", 
+        label = F, 
+        cols = "Paired",
+        label.size = 4)
+dev.off()
+# ggsave(Myeloid.umap, file = paste0("plots/Myeloid/Myeloid.umap.png"), width = 9, height = 7)
+# myeloid.cm <- as.matrix(GetAssayData(object = Myeloid_obj, slot = "counts", assay = "RNA"))
+# myeloid.cm.txt <- write.table(myeloid.cm, 'F:/ITM_data/single_cell/counts.txt', sep = ',', row.names = T, col.names = T, quote = F)
+# 
+# # Replace 'count_matrix.txt' with the actual name of your plain text file
+# file_to_compress <- "counts.txt"
+# 
+# # Create a .tar.gz archive
+# tar_archive_name <- "counts.txt.tar.gz"
+# tar_files <- list(file_to_compress)
+# writeLines(tar_archive_name, gzfile(tar_archive_name, "wb"))
+# tar(tar_archive_name, files = tar_files, tar = "w")
+```
+
+```{r}
+# Define custom markers for 0.6 AFTER features/violin plot
+mast_M <- FindAllMarkers(M_obj.PRE, test.use = "MAST", only.pos = T)
+write.csv(mast_M, file = "mast_DGE_M_cells_res0.6.csv")
+mast_M_top30 <- mast_M %>%
+                group_by(cluster) %>%
+                top_n(n = 30, wt = avg_log2FC)
+write.csv(mast_M_top30, file = "mast_M_obj_top30_res0.6.csv")
+```
+
+```{r}
+#annotation manually and load in .csv file ###
+Idents(M_obj.PRE) <- "subcluster_res.0.6"
+name_sheet <- read.csv(file = "ITM_cluster_names_myeloid_CJ.csv", header = T, sep = ",", row.names = 1)
+to <- as.character(name_sheet$subset) # changing to
+names(to) <- as.character(name_sheet$subcluster_res.0.6) # changing from
+M_obj.PRE <- RenameIdents(M_obj.PRE, to) # rename
+M_obj.PRE[["subset"]] <- Idents(object = M_obj.PRE)
+# cols <- DiscretePalette(12, palette = "stepped", shuffle = F)
+M.umap <- DimPlot(M_obj.PRE, reduction = "subcluster.umap", pt.size = 0.5, cols = "Paired", label = F, label.size = 7) + theme(legend.text = element_text(size = 20), axis.title = element_text(size = 25), axis.text = element_text(size = 25))
+ggsave("plots/M_obj.PRE/M.umap.jpeg", M.umap, width = 20, height = 12)
+```
+```{r}
+# Draw dotplot
+# mast_M %>%
+#     group_by(cluster) %>%
+#     top_n(n = 5, wt = avg_log2FC) -> top5
+
+# brewer.pal(12, "Paired")
+# 
+# # [1] "#A6CEE3" "#1F78B4" "#B2DF8A" "#33A02C" "#FB9A99" "#E31A1C"
+# # [7] "#FDBF6F" "#FF7F00" "#CAB2D6" "#6A3D9A" "#FFFF99" "#B15928"
+# 
+# # to display that palette:
+# display.brewer.pal(12, "Paired")
+
+selected_genes.M <- c("S100A8", "S100A9", "CSF3R",
+                      "CD14", "CD163", "STAB1",
+                      "CD1C", "HLA-DRA", "HLA-DRB5", "HLA-DRB1", "CLEC10A",
+                      "VCAN", "IL1B", "MARCO",
+                      "LST1", "VSIR",
+                      "CXCL9", "CXCL10", "CXCL11", "ISG15", 
+                      "MKI67", "HIST1H4C", "TUBB",
+                      "SPP1", "MMP9", "CTSK",
+                      "CD40", 
+                      "CD5", "IL3RA",
+                      "CCR7", "CCL19", "FSCN1")
+png("Figure1_M_dp.png", res = 300, width = 10, height = 17, units = "cm")
+Clustered_DotPlot(seurat_object = M_obj.PRE, 
+                                     features = selected_genes.M, 
+                                     colors_use_idents = c("Neutrophil"= "#A6CEE3",
+                                                       "M2 macrophage" = "#1F78B4", 
+                                                       "cDC2"="#FB9A99",
+                                                       "VCAM+ TAM"="#60824f",
+                                                       "Myeloid-derived leukocyte"="#FF7F00", 
+                                                       "M1 macrophage"="#CAB2D6",
+                                                       "Cycling myeloid progenitor cell"="#6A3D9A", 
+                                                       "SPP1+ TAM"="#FFFF99",
+                                                       "Plaque macrophage"="#B15928", 
+                                                       "pDC"="#B2DF8A",
+                                                       "CCR7+ DC"="#33A02C"),
+                                     exp_color_min = -1, 
+                                     exp_color_max = 2,
+                  legend_label_size = 0,
+legend_title_size = 0, 
+cluster_ident = FALSE, 
+                  x_lab_rotate = TRUE)
+dev.off()
+```
+---
+title: "ITM_B_subcluster_annotations"
+author: "Jane Tian"
+date: "2023-08-21"
+output: html_document
+---
+
+```{r}
+# seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
+# B_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
+B_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Bcells.rds")
+B_obj.PRE <- subset(B_obj, TREATMENT_TIME %in% "PRE")
+B_obj.PRE <- B_obj.PRE[,!B_obj.PRE$SAMPLE_ID %in% c("PUB1077262", "PUB1097427")]
+B_obj.PRE <- B_obj.PRE[,!B_obj.PRE$subcluster_res.0.6 %in% c("2", "4")]
+DefaultAssay(B_obj.PRE) <- "RNA"
+```
+
+```{r}
+#reso_range <- c(seq(0.2, 1.6, 0.2))
+# Myeloid_obj <- RunUMAP(Myeloid_obj, reduction = "harmony", dims = 1:20, reduction.name = "subcluster.umap", reduction.key = "harmonyUMAP_")
+# Myeloid_obj <- FindClusters(Myeloid_obj, resolution = reso_range, graph.name = "subcluster")
+Idents(B_obj.PRE) <- "subcluster_res.0.6"
+svg("B_umap.svg")
+DimPlot(B_obj.PRE, 
+        reduction = "subcluster.umap", 
+        label = F, 
+        label.size = 4,
+        cols = c("0"="#2a7185", "1"="#a64027", "3"="#fbdf72","5"="#60824f"))
+dev.off()
+# ggsave(Myeloid.umap, file = paste0("plots/Myeloid/Myeloid.umap.png"), width = 9, height = 7)
+# myeloid.cm <- as.matrix(GetAssayData(object = Myeloid_obj, slot = "counts", assay = "RNA"))
+# myeloid.cm.txt <- write.table(myeloid.cm, 'F:/ITM_data/single_cell/counts.txt', sep = ',', row.names = T, col.names = T, quote = F)
+# 
+# # Replace 'count_matrix.txt' with the actual name of your plain text file
+# file_to_compress <- "counts.txt"
+# 
+# # Create a .tar.gz archive
+# tar_archive_name <- "counts.txt.tar.gz"
+# tar_files <- list(file_to_compress)
+# writeLines(tar_archive_name, gzfile(tar_archive_name, "wb"))
+# tar(tar_archive_name, files = tar_files, tar = "w")
+```
+
+```{r}
+png("Bcell_hm.png", width = 15, height = 15, units = "cm", res = 300)
+DoHeatmap(B_obj.PRE, features = top5$gene, group.by = "Group_3_Resistance_vs_Non.resistance") + theme(text = element_text(size = 7))
+dev.off()
+```
+
+```{r}
+pan_B_features <- FeaturePlot(B_obj.PRE, features = c("CD19", "MS4A1", "CD79A", "CD24", "FCERII", "IGHD", "CD38"), pt.size = 0.5) # MS4A1 = CD20; 
+pan_B_features
+```
+```{r}
+Breg_features <- FeaturePlot(B_obj.PRE, features = c("IL2RA", "IGHD", "CD24"), pt.size = 0.5) # MS4A1 = CD20; IGHD = IgD; IL10 no gene expression; 
+Breg_features
+```
+
+```{r}
+# Define custom markers for 0.6 AFTER features/violin plot
+mast_B <- FindAllMarkers(B_obj.PRE, test.use = "MAST", only.pos = T)
+write.csv(mast_B, file = "mast_DGE_B_cells_res0.6.csv")
+mast_B_top10 <- mast_B %>%
+                group_by(cluster) %>%
+                top_n(n = 10, wt = avg_log2FC)
+write.csv(mast_B_top10, file = "mast_B_obj_top10_res0.6.csv")
+```
+
+```{r}
+#annotation manually and load in .csv file ###
+Idents(B_obj.PRE) <- "subcluster_res.0.6"
+name_sheet <- read.csv(file = "F:/ITM_data/single_cell/ITM_cluster_names_Bcells_CJ.csv", header = T, sep = ",", row.names = 1)
+to <- as.character(name_sheet$subset) # changing to
+names(to) <- as.character(name_sheet$subcluster_res.0.6) # changing from
+B_obj.PRE <- RenameIdents(B_obj.PRE, to) # rename
+B_obj.PRE[["subset"]] <- Idents(object = B_obj.PRE)
+# cols <- DiscretePalette(12, palette = "stepped", shuffle = F)
+B.umap <- DimPlot(B_obj.PRE, reduction = "subcluster.umap", pt.size = 0.5, cols = "Set1", label = F, label.size = 7) + theme(legend.text = element_text(size = 20), axis.title = element_text(size = 25), axis.text = element_text(size = 25))
+ggsave("plots/B_obj/B.umap.jpeg", B.umap, width = 20, height = 12)
+```
+
+```{r}
+# Draw dotplot
+#mast_B %>%
+    #group_by(cluster) %>%
+    #top_n(n = 5, wt = avg_log2FC) -> top5
+
+selected_genes.B <- c("CD24", "FCER2", "IL4R", "CD69", "TIMP1", "IFITM3", "HIST1H4C", "TUBB", "HMGN2")
+png("Figure1_B_dp.png", res = 300, width = 6, height = 7, units = "cm")
+Clustered_DotPlot(seurat_object = B_obj.PRE, 
+                                     features = selected_genes.B, 
+                                     colors_use_idents = c("B-cell progenitor"= "#2a7185",
+                                                       "IgG+ memory B cell" = "#a64027", 
+                                                       "Germinal center B cell"="#fbdf72",
+                                                       "Cycling B cell"="#60824f"),
+                                     exp_color_min = -1, 
+                                     exp_color_max = 2, 
+                  # legend_label_size = 0,
+# legend_title_size = 0, 
+cluster_ident = FALSE, 
+                  x_lab_rotate = TRUE)
+dev.off()
+```
