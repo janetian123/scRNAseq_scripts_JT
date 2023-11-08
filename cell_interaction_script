@@ -1,0 +1,751 @@
+---
+title: "cell-cell interaction analysis"
+author: "Jiabao Tian"
+date: "2023-09-22"
+output: html_document
+---
+
+```{r}
+# Libraries loaded
+library(CellChat)
+library(Seurat)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(igraph)
+
+# setwd
+setwd("F:/Jane/cellchat_output")
+```
+
+```{r}
+# Merge the two seurat objects
+
+# Step 1: Extract the column from the subsetted object
+all_celltype <- filtered_ITMv2_R.object_PRE@meta.data["Celltype_major"]
+
+# Step 2: Create a lookup table
+t_sub_map <- T_obj_PRE@meta.data["T_subcluster.anno"]
+t_sub_map$cell_id <- rownames(t_sub_map)
+
+# Step 3: Replace values in the larger object
+for (i in seq_along(t_sub_map$cell_id)) {
+  cell_id <- t_sub_map$cell_id[i]
+  replacement_value <- t_sub_map$T_subcluster.anno[i]
+  
+  rows_to_replace <- rownames(all_celltype) == cell_id
+  all_celltype[rows_to_replace, "T_subcluster.anno"] <- replacement_value
+}
+
+all_celltype$merged <- ifelse(all_celltype$Celltype_major == "Tcell", 
+                             as.character(all_celltype$T_subcluster.anno), 
+                             as.character(all_celltype$Celltype_major))
+
+filtered_ITMv2_R.object_PRE@meta.data$merged_ids <- all_celltype$merged
+```
+
+```{r}
+# Subset the 3 Tsubs out
+T.uni <- subset(filtered_ITMv2_R.object_PRE, merged_ids %in% c("C01_CD8_exhausted", "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1", "Melanocyte", "Myeloid", "Mesenchymal", "Bcell", "Plasmablast", "Endothelial"))
+# unique(filtered_ITMv2_R.object_PRE@meta.data$merged_ids)
+```
+
+```{r}
+# Subset res. and resp. 
+T.uni_res <- subset(T.uni, Group_3_Resistance_vs_Non.resistance %in% "Resistance")
+T.uni_resp <- subset(T.uni, Group_3_Resistance_vs_Non.resistance %in% "Non.resistance")
+```
+
+################################################################################
+############################### Responders #####################################
+################################################################################
+
+```{r}
+# Create a cellchat object from the seurat object
+Idents(T.uni_resp) <- "merged_ids"
+
+input_resp <- GetAssayData(T.uni_resp, assay = "RNA", slot = "data")
+labels_resp <- Idents(T.uni_resp)
+input_resp_metadata <- data.frame(group = labels_resp, row.names = names(labels_resp))
+                             
+T.uni_resp.cc <- createCellChat(object = input_resp, meta = input_resp_metadata, group.by = "group")
+```
+```{r}
+levels(T.uni_resp.cc@idents) # show factor levels of the cell labels
+groupSize_resp <- as.numeric(table(T.uni_resp.cc@idents)) # number of cells in each cell group
+```
+
+```{r}
+# Set the human database 
+CellChatDB <- CellChatDB.human
+showDatabaseCategory(CellChatDB)
+CellChatDB.use <- subsetDB(CellChatDB, search = c("Secreted Signaling", "KEGG"))
+
+# # Show the structure of the database
+# dplyr::glimpse(CellChatDB$interaction)
+
+# Set the used database in the object
+T.uni_resp.cc@DB <- CellChatDB.use
+```
+
+```{r}
+# Subset and pre-process the expression data
+
+T.uni_resp.cc <- subsetData(T.uni_resp.cc) # Preserve signaling genes ONLY
+
+T.uni_resp.cc <- identifyOverExpressedGenes(T.uni_resp.cc)
+
+T.uni_resp.cc <- identifyOverExpressedInteractions(T.uni_resp.cc)
+```
+```{r}
+# Calculate the communication probability of each LR interaction (for cellular communication network inference)
+T.uni_resp.cc <- computeCommunProb(T.uni_resp.cc) 
+# Check "net" of cc.object that shows 1) No. of cell types; 2) No. of total LR interactions
+
+# Filter out the cell-cell communications if there are only few number of cells in certain cell groups
+T.uni_resp.cc <- filterCommunication(T.uni_resp.cc, min.cells = 10) # If less than 10 cells are involved in a communication network, they are filtered out
+
+# Identify all signaling pathways (inferred from the LR interactions)
+T.uni_resp.cc <- computeCommunProbPathway(T.uni_resp.cc)
+# Check "netP" of cc.object that shows 1) No. of cell types; 2) No. of total signaling pathways
+```
+
+```{r}
+# Calculate the aggregated cell-cell communication networks
+T.uni_resp.cc <- aggregateNet(T.uni_resp.cc)
+
+# Aggregated communication visualization
+par(mfrow = c(1, 2), xpd = TRUE)
+netVisual_circle(T.uni_resp.cc@net$count, vertex.weight = groupSize_resp, weight.scale = TRUE, label.edge = FALSE)
+netVisual_circle(T.uni_resp.cc@net$weight, vertex.weight = groupSize_resp, weight.scale = TRUE, label.edge = FALSE)
+
+# Interactions in each cell group
+mat <- T.uni_resp.cc@net$weight
+par(mfrow = c(1,2), xpd=TRUE)
+
+for(i in 1:nrow(mat)) {
+  mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize_resp, weight.scale = T, edge.weight.max = max(mat))
+                   #title.name = rownames(mat)[i])
+  }
+```
+
+```{r}
+# Calculate the network centrality scores (i.e., in the TME network, to what extent one specific cell type communicates to each other cell types)
+T.uni_resp.cc <- netAnalysis_computeCentrality(T.uni_resp.cc, slot.name = "netP")
+
+# Visualization of the network centrality scores
+netAnalysis_signalingRole_scatter(T.uni_resp.cc)
+# netAnalysis_signalingRole_scatter(pre_resp.cc, signaling = "TNF")
+# x-axis shows to what extent the cell is releasing signals to communicate with other cells
+# y-axis shows to what extent the cell is receiving signals to communicate with other cells
+# e.g., Melanocytes & mesenchymal mostly release signals
+
+netAnalysis_signalingRole_heatmap(T.uni_resp.cc, pattern = "outgoing", height = 10, color.heatmap = "OrRd")
+netAnalysis_signalingRole_heatmap(T.uni_resp.cc, pattern = "incoming", height = 10, color.heatmap = "OrRd")
+# colobar = relative signaling strength 
+# top_colorbar = total signaling strength of ONE cell type across different signaling pathways
+# side_barplot = total signaling strength of ONE signaling pathway across different cell types
+```
+
+```{r}
+# Calculate global communication patterns 
+
+selectK(T.uni_resp.cc, pattern = "outgoing", k.range = seq(1:7))
+T.uni_resp.cc <- identifyCommunicationPatterns(T.uni_resp.cc, pattern = "outgoing", k = 2, height = 10, color.heatmap = "OrRd")
+netAnalysis_river(T.uni_resp.cc, pattern = "outgoing")
+netAnalysis_dot(T.uni_resp.cc, pattern = "outgoing")
+# k = pattern
+# Pattern 1 has stronger signaling strength of the bottom pathways
+# Pattern 2 has stronger signaling strength of the top pathways e.g., Immune cells have stronger signaling strength of the top pathways
+# Heatmap and river plot preferred for overview
+
+selectK(T.uni_resp.cc, pattern = "incoming", k.range = seq(1:7))
+T.uni_resp.cc <- identifyCommunicationPatterns(T.uni_resp.cc, pattern = "incoming", k = 3, height = 10, color.heatmap = "OrRd")
+netAnalysis_river(T.uni_resp.cc, pattern = "incoming")
+netAnalysis_dot(T.uni_resp.cc, pattern = "incoming")
+```
+
+```{r}
+# Groups signaling pathways (pathways with similar functions/structures are grouped together)
+
+T.uni_resp.cc <- computeNetSimilarity(T.uni_resp.cc, type = "functional")
+T.uni_resp.cc <- netEmbedding(T.uni_resp.cc, type = "functional")
+# Manifold learning of the signaling networks for a single dataset
+# Major senders and receivers of pathways grouped together should be similar
+T.uni_resp.cc <- netClustering(T.uni_resp.cc, type = "functional", do.parallel = FALSE)
+# Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+netVisual_embedding(T.uni_resp.cc, type = "functional", label.size = 3.5)
+
+T.uni_resp.cc <- computeNetSimilarity(T.uni_resp.cc, type = "structural")
+T.uni_resp.cc <- netEmbedding(T.uni_resp.cc, type = "structural")
+# Manifold learning of the signaling networks for a single dataset
+# Major senders and receivers of pathways grouped together should be similar
+T.uni_resp.cc <- netClustering(T.uni_resp.cc, type = "structural", do.parallel = FALSE)
+# Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+netVisual_embedding(T.uni_resp.cc, type = "structural", label.size = 3.5)
+```
+
+```{r}
+# Save pre_resp.cc
+saveRDS(T.uni_resp.cc, file = "cellchat_T.uni_resp.rds")
+```
+
+```{r}
+T.uni_resp.cc <- readRDS("cellchat_T.uni_resp.rds")
+```
+
+################################################################################
+############################### Resistance #####################################
+################################################################################
+
+```{r}
+# Create a cellchat object from the seurat object
+Idents(T.uni_res) <- "merged_ids"
+
+input_res <- GetAssayData(T.uni_res, assay = "RNA", slot = "data")
+labels_res <- Idents(T.uni_res)
+input_res_metadata <- data.frame(group = labels_res, row.names = names(labels_res))
+                             
+T.uni_res.cc <- createCellChat(object = input_res, meta = input_res_metadata, group.by = "group")
+```
+
+```{r}
+levels(T.uni_res.cc@idents) # show factor levels of the cell labels
+groupSize_resp <- as.numeric(table(T.uni_res.cc@idents)) # number of cells in each cell group
+```
+
+```{r}
+# Set the human database 
+CellChatDB <- CellChatDB.human
+showDatabaseCategory(CellChatDB)
+CellChatDB.use <- subsetDB(CellChatDB, search = c("Secreted Signaling", "KEGG"))
+
+# # Show the structure of the database
+# dplyr::glimpse(CellChatDB$interaction)
+
+# Set the used database in the object
+T.uni_res.cc@DB <- CellChatDB.use
+```
+
+```{r}
+# Subset and pre-process the expression data
+
+T.uni_res.cc <- subsetData(T.uni_res.cc) # Preserve signaling genes ONLY
+
+T.uni_res.cc <- identifyOverExpressedGenes(T.uni_res.cc)
+
+T.uni_res.cc <- identifyOverExpressedInteractions(T.uni_res.cc)
+```
+
+```{r}
+# Calculate the communication probability of each LR interaction (for cellular communication network inference)
+T.uni_res.cc <- computeCommunProb(T.uni_res.cc) 
+# Check "net" of cc.object that shows 1) No. of cell types; 2) No. of total LR interactions
+
+# Filter out the cell-cell communications if there are only few number of cells in certain cell groups
+T.uni_res.cc <- filterCommunication(T.uni_res.cc, min.cells = 10) # If less than 10 cells are involved in a communication network, they are filtered out
+
+# Identify all signaling pathways (inferred from the LR interactions)
+T.uni_res.cc <- computeCommunProbPathway(T.uni_res.cc)
+# Check "netP" of cc.object that shows 1) No. of cell types; 2) No. of total signaling pathways
+```
+
+```{r}
+# Calculate the aggregated cell-cell communication networks
+T.uni_res.cc <- aggregateNet(T.uni_res.cc)
+
+# Aggregated communication visualization
+par(mfrow = c(1, 2), xpd = TRUE)
+netVisual_circle(T.uni_res.cc@net$count, vertex.weight = groupSize_resp, weight.scale = TRUE, label.edge = FALSE)
+netVisual_circle(T.uni_res.cc@net$weight, vertex.weight = groupSize_resp, weight.scale = TRUE, label.edge = FALSE)
+
+# Interactions in each cell group
+mat <- T.uni_res.cc@net$weight
+par(mfrow = c(1,2), xpd=TRUE)
+
+for(i in 1:nrow(mat)) {
+  mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize_resp, weight.scale = T, edge.weight.max = max(mat))
+                   #title.name = rownames(mat)[i])
+  }
+```
+
+```{r}
+# Calculate the network centrality scores (i.e., in the TME network, to what extent one specific cell type communicates to each other cell types)
+T.uni_res.cc <- netAnalysis_computeCentrality(T.uni_res.cc, slot.name = "netP")
+
+# Visualization of the network centrality scores
+netAnalysis_signalingRole_scatter(T.uni_res.cc)
+# netAnalysis_signalingRole_scatter(pre_resp.cc, signaling = "TNF")
+# x-axis shows to what extent the cell is releasing signals to communicate with other cells
+# y-axis shows to what extent the cell is receiving signals to communicate with other cells
+# e.g., Melanocytes & mesenchymal mostly release signals
+
+netAnalysis_signalingRole_heatmap(T.uni_res.cc, pattern = "outgoing", height = 10, color.heatmap = "OrRd")
+netAnalysis_signalingRole_heatmap(T.uni_res.cc, pattern = "incoming", height = 10, color.heatmap = "OrRd")
+# colobar = relative signaling strength 
+# top_colorbar = total signaling strength of ONE cell type across different signaling pathways
+# side_barplot = total signaling strength of ONE signaling pathway across different cell types
+```
+
+```{r}
+# Calculate global communication patterns 
+
+selectK(T.uni_res.cc, pattern = "outgoing", k.range = seq(1:7))
+T.uni_res.cc <- identifyCommunicationPatterns(T.uni_res.cc, pattern = "outgoing", k = 2, height = 10, color.heatmap = "OrRd")
+netAnalysis_river(T.uni_res.cc, pattern = "outgoing")
+netAnalysis_dot(T.uni_res.cc, pattern = "outgoing")
+# k = pattern
+# Pattern 1 has stronger signaling strength of the bottom pathways
+# Pattern 2 has stronger signaling strength of the top pathways e.g., Immune cells have stronger signaling strength of the top pathways
+# Heatmap and river plot preferred for overview
+
+selectK(T.uni_res.cc, pattern = "incoming", k.range = seq(1:7))
+T.uni_res.cc <- identifyCommunicationPatterns(T.uni_res.cc, pattern = "incoming", k = 3, height = 10, color.heatmap = "OrRd")
+netAnalysis_river(T.uni_res.cc, pattern = "incoming")
+netAnalysis_dot(T.uni_res.cc, pattern = "incoming")
+```
+
+```{r}
+# Groups signaling pathways (pathways with similar functions/structures are grouped together)
+
+T.uni_res.cc <- computeNetSimilarity(T.uni_res.cc, type = "functional")
+T.uni_res.cc <- netEmbedding(T.uni_res.cc, type = "functional")
+# Manifold learning of the signaling networks for a single dataset
+# Major senders and receivers of pathways grouped together should be similar
+T.uni_res.cc <- netClustering(T.uni_res.cc, type = "functional", do.parallel = FALSE)
+# Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+netVisual_embedding(T.uni_res.cc, type = "functional", label.size = 3.5)
+
+T.uni_res.cc <- computeNetSimilarity(T.uni_res.cc, type = "structural")
+T.uni_res.cc <- netEmbedding(T.uni_res.cc, type = "structural")
+# Manifold learning of the signaling networks for a single dataset
+# Major senders and receivers of pathways grouped together should be similar
+T.uni_res.cc <- netClustering(T.uni_res.cc, type = "structural", do.parallel = FALSE)
+# Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+netVisual_embedding(T.uni_res.cc, type = "structural", label.size = 3.5)
+```
+
+```{r}
+# Save pre_resp.cc
+saveRDS(T.uni_res.cc, file = "cellchat_T.uni_res.rds")
+```
+
+```{r}
+T.uni_res.cc <- readRDS("cellchat_T.uni_res.rds")
+```
+
+################################################################################
+############################ Merged to compare #################################
+################################################################################
+
+```{r}
+# Make sure the two cc.obj are loaded
+#pre_res.cc <- readRDS("cellchat_pre_res.rds")
+#pre_resp.cc <- readRDS("cellchat_pre_resp.rds")
+
+# Merge the cc.obj
+object.list <- list(Res = T.uni_res.cc, Resp = T.uni_resp.cc)
+
+merged_cc.object <- mergeCellChat(object.list, add.names = names(object.list))
+# view(object.list)
+```
+
+```{r}
+merged_cc.object
+```
+
+```{r}
+gg1 <- compareInteractions(merged_cc.object, show.legend = F, group = c(1,2))
+gg2 <- compareInteractions(merged_cc.object, show.legend = F, group = c(1,2), measure = "weight")
+gg1 + gg2
+```
+
+```{r}
+par(mfrow = c(1,2), xpd=TRUE)
+count_cirplot <- netVisual_diffInteraction(merged_cc.object, weight.scale = T, measure = "count")
+weight_cirplot <- netVisual_diffInteraction(merged_cc.object, weight.scale = T, measure = "weight")
+```
+what does red vs blue mean above?
+In the colorbar, red (or blue) represents increased (or decreased) signaling in the second dataset compared to the first one.
+
+################################################################################
+################################ CCI Heatmap ###################################
+################################################################################
+
+```{r}
+# Heatmap - Interaction counts
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/count_CCI_hm.svg", width = 6, height = 7)
+netVisual_heatmap(merged_cc.object, font.size = 12)
+dev.off()
+
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/weight_CCI_hm.svg", width = 6, height = 7)
+netVisual_heatmap(merged_cc.object, measure = "weight", font.size = 12)
+dev.off()
+
+# gg1 + gg2
+```
+
+##res vs resp##
+
+number of differential interactions
+- mela to mela dec
+- mesen to mesen inc
+- mesen to endo inc
+representative of MET/EMT? leading to prog
+
+strengh of interaction 
+- high for T and B
+- mye to T inc
+- endo/mesen to T inc
+MDSC/CAF inhibition or T trafficking
+
+to support
+- GSEA of subpopulations res vs resp
+
+```{r}
+# combining all the identified signaling pathways from different datasets - outgoing
+i = 1
+pathway.union <- union(object.list[[i]]@netP$pathways, object.list[[i+1]]@netP$pathways)
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "outgoing", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "outgoing", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+```
+
+```{r}
+# combining all the identified signaling pathways from different datasets - incoming
+i = 1
+pathway.union <- union(object.list[[i]]@netP$pathways, object.list[[i+1]]@netP$pathways)
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "incoming", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "incoming", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+```
+
+```{r}
+# combining all the identified signaling pathways from different datasets - overall
+i = 1
+pathway.union <- union(object.list[[i]]@netP$pathways, object.list[[i+1]]@netP$pathways)
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "all", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "all", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 8, font.size = 7, color.heatmap = "GnBu")
+
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+########### change the colour to default
+```
+
+```{r}
+weight.max <- getMaxWeight(object.list, attribute = c("idents","count"))
+
+par(mfrow = c(1,2), xpd=TRUE)
+
+for (i in 1:length(object.list)) {
+  netVisual_circle(object.list[[i]]@net$count, weight.scale = T, label.edge= F, edge.weight.max = weight.max[2], edge.width.max = 12, title.name = paste0("Number of interactions - ", names(object.list)[i]))
+}
+```
+
+```{r}
+#simplify by selecting cell types
+
+group.cellType <- c("Melanocyte", "Myeloid", "Bcell", "C06_CD4_Th_CXCL13_TCF7_PD1", "C01_CD8_exhausted", "C02_CD4_Treg")
+group.cellType <- factor(group.cellType, levels = c("Melanocyte", "Myeloid", "Bcell", "C06_CD4_Th_CXCL13_TCF7_PD1", "C01_CD8_exhausted", "C02_CD4_Treg"))
+# "C01_CD8_exhausted", "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1"
+# "Mesenchymal", "Endothelial", "Plasmablast"
+
+object.list <- lapply(object.list, function(x) {mergeInteractions(x, group.cellType)})
+
+cellchat_immune <- mergeCellChat(object.list, add.names = names(object.list))
+```
+
+```{r}
+# Interactions between the cells
+weight.max <- getMaxWeight(object.list, slot.name = c("idents", "net", "net"), attribute = c("idents","count", "count.merged"))
+par(mfrow = c(1,2), xpd=TRUE)
+for (i in 1:length(object.list)) {
+  netVisual_circle(object.list[[i]]@net$count.merged, weight.scale = T, label.edge= T, edge.weight.max = weight.max[3], edge.width.max = 12, title.name = paste0("Number of interactions - ", names(object.list)[i]))
+}
+
+# Differentially expressed interactions
+par(mfrow = c(1,2), xpd=TRUE)
+
+svg("immune_count_merged_circleplot.svg", width = 8, height = 8)
+netVisual_diffInteraction(cellchat_immune, weight.scale = TRUE, measure = "count.merged", label.edge = TRUE) 
+dev.off()
+
+svg("immune_weight_merged_circleplot.svg", width = 8, height = 8)
+netVisual_diffInteraction(cellchat_immune, weight.scale = TRUE, measure = "weight.merged", label.edge = TRUE)
+dev.off()
+# e.g., compared to resistant, there are 9 increasing interactions between T and myeloid
+```
+
+```{r}
+netAnalysis_signalingRole_network(merged_cc.object, signaling = pathways.show, width = 8, height = 2.5, font.size = 10)
+num.link <- sapply(object.list, function(x) {rowSums(x@net$count) + colSums(x@net$count)-diag(x@net$count)})
+
+weight.MinMax <- c(min(num.link), max(num.link)) # control the dot size in the different datasets
+gg <- list()
+for (i in 1:length(object.list)) {
+  gg[[i]] <- netAnalysis_signalingRole_scatter(object.list[[i]], title = names(object.list)[i], weight.MinMax = weight.MinMax)
+}
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+patchwork::wrap_plots(plots = gg)
+```
+
+```{r}
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Melanocyte", signaling.exclude = "MIF")
+#> Visualizing differential outgoing and incoming signaling changes from NL to LS
+#> The following `from` values were not present in `x`: 0
+#> The following `from` values were not present in `x`: 0, -1
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Tcell", signaling.exclude = "MIF")
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Myeloid", signaling.exclude = "MIF")
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Bcell", signaling.exclude = "MIF")
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Mesenchymal", signaling.exclude = "MIF")
+netAnalysis_signalingChanges_scatter(merged_cc.object, idents.use = "Endothelial", signaling.exclude = "MIF")
+
+# plots <- patchwork::wrap_plots(plots = list(gg1,gg2))
+# print(plots)
+```
+
+```{r}
+merged_cc.object <- computeNetSimilarityPairwise(merged_cc.object, type = "functional")
+#> Compute signaling network similarity for datasets 1 2
+merged_cc.object <- netEmbedding(merged_cc.object, type = "functional")
+#> Manifold learning of the signaling networks for datasets 1 2
+merged_cc.object <- netClustering(merged_cc.object, type = "functional", do.parallel = FALSE) # Cannot do.parallel as no multiprocessing strategy
+#> Classification learning of the signaling networks for datasets 1 2
+# Visualization in 2D-space
+netVisual_embeddingPairwise(merged_cc.object, type = "functional", label.size = 2)
+#> 2D visualization of signaling networks from datasets 1 2
+
+merged_cc.object <- computeNetSimilarityPairwise(merged_cc.object, type = "structural")
+#> Compute signaling network similarity for datasets 1 2
+merged_cc.object <- netEmbedding(merged_cc.object, type = "structural")
+#> Manifold learning of the signaling networks for datasets 1 2
+merged_cc.object <- netClustering(merged_cc.object, type = "structural", do.parallel = FALSE)
+#> Classification learning of the signaling networks for datasets 1 2
+# Visualization in 2D-space
+netVisual_embeddingPairwise(merged_cc.object, type = "structural", label.size = 2)
+#> 2D visualization of signaling networks from datasets 1 2
+```
+
+```{r}
+rankSimilarity(merged_cc.object, type = "functional")
+rankSimilarity(merged_cc.object, type = "structural")
+```
+
+```{r}
+gg1 <- rankNet(merged_cc.object, mode = "comparison", measure = "weight", stacked = T, do.stat = TRUE)
+gg2 <- rankNet(merged_cc.object, mode = "comparison", measure = "weight", stacked = F, do.stat = TRUE)
+gg1 + gg2
+
+gg3 <- rankNet(merged_cc.object, mode = "comparison", measure = "count", stacked = T, do.stat = TRUE)
+gg4 <- rankNet(merged_cc.object, mode = "comparison", measure = "count", stacked = F, do.stat = TRUE)
+gg3 + gg4
+```
+################################################################################
+######################### Bubble plots (comm.prob) #############################
+################################################################################
+
+```{r}
+selected_targets <- c("Melanocyte", "Myeloid", "Bcell", "C01_CD8_exhausted",  "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1")
+
+## melanocyte --> others
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots/melan_bubplot.svg", width = 5, height = 8)
+netVisual_bubble(cellchat_immune, sources.use = 1, targets.use = selected_targets, comparison = c(1, 2), max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+
+## myeloid --> others
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots/myeloid_bubplot.svg", width = 5, height = 6)
+netVisual_bubble(cellchat_immune, sources.use = 2, targets.use = selected_targets, comparison = c(1, 2), max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+
+## B cells --> others
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots/B_bubplot.svg", width = 5, height = 3)
+netVisual_bubble(cellchat_immune, sources.use = 5, targets.use = selected_targets, comparison = c(1, 2), max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+```
+
+```{r}
+selected_targets <- c("Melanocyte", "Myeloid", "Bcell", "C01_CD8_exhausted",  "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1")
+
+## melanocyte --> others
+mela_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "MK"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/melan_bubplot.svg", width = 5, height = 4.65)
+netVisual_bubble(cellchat_immune, sources.use = 1, targets.use = selected_targets, comparison = c(1, 2), pairLR.use = mela_pairLR.use, max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+
+## myeloid --> others
+my_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "GALECTIN", "TNF"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/myeloid_bubplot.svg", width = 5, height = 4.5)
+netVisual_bubble(cellchat_immune, sources.use = 2, targets.use = selected_targets, comparison = c(1, 2), max.dataset = 2, pairLR.use = my_pairLR.use, angle.x = 45, remove.isolate = T)
+dev.off()
+
+## B cells --> others
+B_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "TNF"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/B_bubplot.svg", width = 5, height = 4.4)
+netVisual_bubble(cellchat_immune, sources.use = 5, targets.use = selected_targets, comparison = c(1, 2), max.dataset = 2, pairLR.use = B_pairLR.use, angle.x = 45, remove.isolate = T)
+dev.off()
+```
+
+```{r}
+selected_targets <- c("Melanocyte", "Myeloid", "Bcell", "C01_CD8_exhausted",  "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1")
+
+## Tsubs --> other cells
+
+Treg_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "LT"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/Treg_bubplot.svg", width = 5, height = 4.8)
+netVisual_bubble(cellchat_immune, sources.use = 3, targets.use = selected_targets, comparison = c(1, 2), pairLR.use = Treg_pairLR.use, max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+
+Tex_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "CXCL"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/Tex_bubplot.svg", width = 5, height = 5)
+netVisual_bubble(cellchat_immune, sources.use = 7, targets.use = selected_targets, comparison = c(1, 2), pairLR.use = Tex_pairLR.use, max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+
+Th_pairLR.use <- extractEnrichedLR(cellchat_immune, signaling = c("MIF", "CXCL", "IL16"))
+svg(file = "F:/Jane/cellchat_output/updated_plots_cc/bubble_plots_selected/Th_bubplot.svg", width = 5, height = 5.5)
+netVisual_bubble(cellchat_immune, sources.use = 6, targets.use = selected_targets, comparison = c(1, 2), pairLR.use = Tex_pairLR.use, max.dataset = 2, angle.x = 45, remove.isolate = T)
+dev.off()
+```
+```{r}
+# Chord diagram
+pathways.show <- c("TGFb") 
+par(mfrow = c(1,2), xpd=TRUE)
+
+  netVisual_aggregate(object.list[[2]], signaling = pathways.show, layout = "chord", signaling.name = paste(pathways.show, names(object.list)[2]))
+}
+```
+
+
+```{r}
+# define a positive dataset, i.e., the dataset with positive fold change against the other dataset
+pos.dataset <- "Resp"
+# define a char name used for storing the results of differential expression analysis
+features.name <- pos.dataset
+# perform differential expression analysis
+merged_cc.object <- identifyOverExpressedGenes(merged_cc.object, group.dataset = "datasets", pos.dataset = pos.dataset, features.name = features.name, only.pos = FALSE, thresh.pc = 0.1, thresh.fc = 0.25, thresh.p = 0.05)
+#> Use the joint cell labels from the merged CellChat object
+# map the results of differential expression analysis onto the inferred cell-cell communications to easily manage/subset the ligand-receptor pairs of interest
+net <- netMappingDEG(merged_cc.object, features.name = features.name)
+# extract the ligand-receptor pairs with upregulated ligands in Res
+net.up <- subsetCommunication(merged_cc.object, net = net, datasets = "Resp", ligand.logFC = 0.2, receptor.logFC = NULL)
+# extract the ligand-receptor pairs with upregulated ligands and upregulated recetptors in NL, i.e.,downregulated in Res
+net.down <- subsetCommunication(merged_cc.object, net = net, datasets = "Res",ligand.logFC = -0.1, receptor.logFC = -0.1)
+```
+
+```{r}
+gene.up <- extractGeneSubsetFromPair(net.up, merged_cc.object)
+gene.down <- extractGeneSubsetFromPair(net.down, merged_cc.object)
+```
+
+```{r}
+pairLR.use.up = net.up[, "interaction_name", drop = F]
+gg1 <- netVisual_bubble(cellchat_immune, pairLR.use = pairLR.use.up, sources.use = 1, targets.use = c(1:6), comparison = c(1, 2), max.dataset = 2, angle.x = 45, remove.isolate = T,title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+
+pairLR.use.down = net.down[, "interaction_name", drop = F]
+gg2 <- netVisual_bubble(cellchat_immune, pairLR.use = pairLR.use.down, sources.use = 1, targets.use = c(1:6), comparison = c(1, 2), max.dataset = 1, angle.x = 45, remove.isolate = T,title.name = paste0("Down-regulated signaling in ", names(object.list)[2]))
+
+gg1 + gg2
+```
+
+```{r}
+# Chord diagrams
+# par(mfrow = c(1,2), xpd=TRUE)
+
+selected_targets <- c("Melanocyte", "Myeloid", "Bcell", "C01_CD8_exhausted",  "C02_CD4_Treg", "C06_CD4_Th_CXCL13_TCF7_PD1")
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_mela.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 1, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_myeloid.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 2, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Down-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_Treg.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 3, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_B.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 5, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_Th.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 6, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+svg("F:/Jane/cellchat_output/updated_plots_cc/chord/chord_Tex.svg", width = 10, height = 10)
+netVisual_chord_gene(object.list[[2]], sources.use = 7, targets.use = selected_targets, slot.name = 'net', net = net.up, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+dev.off()
+
+```
+
+```{r}
+pathways.show <- c("MIF") 
+par(mfrow = c(1,2), xpd=TRUE)
+ht <- list()
+for (i in 1:length(object.list)) {
+  ht[[i]] <- netVisual_heatmap(object.list[[i]], signaling = pathways.show, color.heatmap = "Reds",title.name = paste(pathways.show, "signaling", names(object.list)[i]))
+}
+#> Do heatmap based on a single object 
+#> 
+#> Do heatmap based on a single object
+ComplexHeatmap::draw(ht[[1]] + ht[[2]], ht_gap = unit(0.5, "cm"))
+```
+
+```{r}
+merged_cc.object@meta$datasets = factor(merged_cc.object@meta$datasets, levels = c("Res", "Resp")) # set factor level
+plotGeneExpression(merged_cc.object, signaling = "MIF", group.by = "datasets", type = "dot", color.use = "RdBu")
+plotGeneExpression(merged_cc.object, signaling = "MIF", split.by = "datasets", type = "dot", color.use = "RdBu")
+
+plotGeneExpression(merged_cc.object, signaling = "MK", group.by = "datasets", type = "dot", color.use = "RdBu")
+plotGeneExpression(merged_cc.object, signaling = "MK", split.by = "datasets", type = "dot", color.use = "RdBu")
+
+plotGeneExpression(merged_cc.object, signaling = "SPP1", group.by = "datasets", type = "dot", color.use = "RdBu")
+plotGeneExpression(merged_cc.object, signaling = "SPP1", split.by = "datasets", type = "dot", color.use = "RdBu")
+
+plotGeneExpression(merged_cc.object, signaling = "CXCL", group.by = "datasets", type = "dot", color.use = "RdBu")
+plotGeneExpression(merged_cc.object, signaling = "CXCL", split.by = "datasets", type = "dot", color.use = "RdBu")
+
+plotGeneExpression(merged_cc.object, signaling = "CCL", group.by = "datasets", type = "dot", color.use = "RdBu")
+plotGeneExpression(merged_cc.object, signaling = "CCL", split.by = "datasets", type = "dot", color.use = "RdBu")
+
+#> The default behaviour of split.by has changed.
+#> Separate violin plots are now plotted side-by-side.
+#> To restore the old behaviour of a single split violin,
+#> set split.plot = TRUE.
+#>       
+#> This message will be shown once per session.
+#> Scale for 'y' is already present. Adding another scale for 'y', which will
+#> replace the existing scale.
+#> Scale for 'y' is already present. Adding another scale for 'y', which will
+#> replace the existing scale.
+#> Scale for 'y' is already present. Adding another scale for 'y', which will
+#> replace the existing scale.
+```
+
+```{r}
+merged_cc.object@meta$datasets = factor(merged_cc.object@meta$datasets, levels = c("Res", "Resp")) # set factor level
+plotGeneExpression(merged_cc.object, signaling = "MIF", group.by = "datasets", type = "violin")
+plotGeneExpression(merged_cc.object, signaling = "MIF", split.by = "datasets", type = "violin")
+
+plotGeneExpression(merged_cc.object, signaling = "MK", group.by = "datasets", type = "violin")
+plotGeneExpression(merged_cc.object, signaling = "MK", split.by = "datasets", type = "violin")
+
+plotGeneExpression(merged_cc.object, signaling = "SPP1", group.by = "datasets", type = "violin")
+plotGeneExpression(merged_cc.object, signaling = "SPP1", split.by = "datasets", type = "violin")
+
+plotGeneExpression(merged_cc.object, signaling = "CXCL", group.by = "datasets", type = "violin")
+plotGeneExpression(merged_cc.object, signaling = "CXCL", split.by = "datasets", type = "violin")
+
+plotGeneExpression(merged_cc.object, signaling = "CCL", group.by = "datasets", type = "violin")
+plotGeneExpression(merged_cc.object, signaling = "CCL", split.by = "datasets", type = "violin")
+```
+
+
