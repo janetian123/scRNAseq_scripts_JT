@@ -62,7 +62,7 @@ ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 14, height = 
 ########################################################
 ```{r}
 # Violin plots focusing on C_08
-plot <- VlnPlot(T_obj, features = c("CD44","EGFR","MMP2","MMP9", "VEGF", "PRKCA", "PIK3CA", "AKT1", "HIF1A"), split.by = "Group_3_Resistance_vs_Non.resistance", pt.size = 0.5, group.by = "subcluster_res.0.6")
+plot <- VlnPlot(T_obj, features = c("CD44","EGFR","MMP2","MMP9", "VEGF", "PRKCA", "PIK3CA", "AKT1", "HIF1A"), split.by = "Patient_group_name", pt.size = 0.5, group.by = "subcluster_res.0.6")
 plot
 ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 30, height = 20)
 ```
@@ -71,7 +71,7 @@ ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 30, height = 
 ```{r}
 #features plot_CD8
 CD8_Tcell_features <- FeaturePlot(T_obj, features = c("CD69", "IL2RA", "ADT. CD25", "GZMB", "PRF1", "PTPRC", "ADT.CD45RA", "ADT.CD45RO", "ADT.CD62L", "SELL", "CCR7", "TCF7", "PDCD1", "HAVCR2", "LAG3", "TOX", "TOX2", "TIGIT", "VCAM1", "APOE", "APOD"), pt.size = 0.5)
-# CD8_Tcell_features_ex.markers <- FeaturePlot(T_obj, features = c("PDCD1", "HAVCR2", "LAG3"), split.by = "Group_3_Resistance_vs_Non.resistance", pt.size = 0.5)
+# CD8_Tcell_features_ex.markers <- FeaturePlot(T_obj, features = c("PDCD1", "HAVCR2", "LAG3"), split.by = "Patient_group_name", pt.size = 0.5)
 
 ggsave(CD8_Tcell_features, file = paste0("plots/tcells/CD8.featureplot.png"), width = 22, height = 20)
 # ggsave(CD8_Tcell_features_ex.markers, file = paste0("plots/tcells/CD8.featureplot.ex.png"), width = 22, height = 20)
@@ -134,7 +134,7 @@ ggsave(filename = "F:Jane/Fig.1/Figure_1b.png", width = 18, height = 12)
 ```
 
 ```{r}
-DimPlot(T_obj, reduction = "subcluster.umap", split.by = "Group_3_Resistance_vs_Non.resistance")
+DimPlot(T_obj, reduction = "subcluster.umap", split.by = "Patient_group_name")
 T_obj@meta.data$T_subcluster.anno <- Idents(T_obj)
 T_bar <- dittoBarPlot(object = T_obj, var = "T_subcluster.anno", group.by = "SAMPLE_ID", scale = "percent", split.ncol = 2, main="T_subclusters")
 ggsave(T_bar, file = paste0("plots/tcells/T_cells_stackedbar.png"), width = 13, height = 10)
@@ -150,7 +150,7 @@ output: html_document
 # Myeloid_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
 M_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Mcells.rds")
 M_obj.PRE <- subset(M_obj, TREATMENT_TIME %in% "PRE")
-M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$SAMPLE_ID %in% c("PUB1077262", "PUB1097427")]
+M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$SAMPLE_ID %in% c("patient_ID_1", "patient_ID_2")]
 M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$subcluster_res.0.6 %in% c("4")]
 DefaultAssay(M_obj.PRE) <- "RNA"
 
@@ -168,18 +168,6 @@ DimPlot(M_obj.PRE,
         cols = "Paired",
         label.size = 4)
 dev.off()
-# ggsave(Myeloid.umap, file = paste0("plots/Myeloid/Myeloid.umap.png"), width = 9, height = 7)
-# myeloid.cm <- as.matrix(GetAssayData(object = Myeloid_obj, slot = "counts", assay = "RNA"))
-# myeloid.cm.txt <- write.table(myeloid.cm, 'F:/ITM_data/single_cell/counts.txt', sep = ',', row.names = T, col.names = T, quote = F)
-# 
-# # Replace 'count_matrix.txt' with the actual name of your plain text file
-# file_to_compress <- "counts.txt"
-# 
-# # Create a .tar.gz archive
-# tar_archive_name <- "counts.txt.tar.gz"
-# tar_files <- list(file_to_compress)
-# writeLines(tar_archive_name, gzfile(tar_archive_name, "wb"))
-# tar(tar_archive_name, files = tar_files, tar = "w")
 ```
 
 ```{r}
@@ -263,15 +251,15 @@ output: html_document
 # B_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
 B_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Bcells.rds")
 B_obj.PRE <- subset(B_obj, TREATMENT_TIME %in% "PRE")
-B_obj.PRE <- B_obj.PRE[,!B_obj.PRE$SAMPLE_ID %in% c("PUB1077262", "PUB1097427")]
+B_obj.PRE <- B_obj.PRE[,!B_obj.PRE$SAMPLE_ID %in% c("patient_ID_1", "patient_ID_2")]
 B_obj.PRE <- B_obj.PRE[,!B_obj.PRE$subcluster_res.0.6 %in% c("2", "4")]
 DefaultAssay(B_obj.PRE) <- "RNA"
 ```
 
 ```{r}
 #reso_range <- c(seq(0.2, 1.6, 0.2))
-# Myeloid_obj <- RunUMAP(Myeloid_obj, reduction = "harmony", dims = 1:20, reduction.name = "subcluster.umap", reduction.key = "harmonyUMAP_")
-# Myeloid_obj <- FindClusters(Myeloid_obj, resolution = reso_range, graph.name = "subcluster")
+# B_obj <- RunUMAP(B_obj, reduction = "harmony", dims = 1:20, reduction.name = "subcluster.umap", reduction.key = "harmonyUMAP_")
+# B_obj <- FindClusters(B_obj, resolution = reso_range, graph.name = "subcluster")
 Idents(B_obj.PRE) <- "subcluster_res.0.6"
 svg("B_umap.svg")
 DimPlot(B_obj.PRE, 
@@ -280,33 +268,6 @@ DimPlot(B_obj.PRE,
         label.size = 4,
         cols = c("0"="#2a7185", "1"="#a64027", "3"="#fbdf72","5"="#60824f"))
 dev.off()
-# ggsave(Myeloid.umap, file = paste0("plots/Myeloid/Myeloid.umap.png"), width = 9, height = 7)
-# myeloid.cm <- as.matrix(GetAssayData(object = Myeloid_obj, slot = "counts", assay = "RNA"))
-# myeloid.cm.txt <- write.table(myeloid.cm, 'F:/ITM_data/single_cell/counts.txt', sep = ',', row.names = T, col.names = T, quote = F)
-# 
-# # Replace 'count_matrix.txt' with the actual name of your plain text file
-# file_to_compress <- "counts.txt"
-# 
-# # Create a .tar.gz archive
-# tar_archive_name <- "counts.txt.tar.gz"
-# tar_files <- list(file_to_compress)
-# writeLines(tar_archive_name, gzfile(tar_archive_name, "wb"))
-# tar(tar_archive_name, files = tar_files, tar = "w")
-```
-
-```{r}
-png("Bcell_hm.png", width = 15, height = 15, units = "cm", res = 300)
-DoHeatmap(B_obj.PRE, features = top5$gene, group.by = "Group_3_Resistance_vs_Non.resistance") + theme(text = element_text(size = 7))
-dev.off()
-```
-
-```{r}
-pan_B_features <- FeaturePlot(B_obj.PRE, features = c("CD19", "MS4A1", "CD79A", "CD24", "FCERII", "IGHD", "CD38"), pt.size = 0.5) # MS4A1 = CD20; 
-pan_B_features
-```
-```{r}
-Breg_features <- FeaturePlot(B_obj.PRE, features = c("IL2RA", "IGHD", "CD24"), pt.size = 0.5) # MS4A1 = CD20; IGHD = IgD; IL10 no gene expression; 
-Breg_features
 ```
 
 ```{r}
