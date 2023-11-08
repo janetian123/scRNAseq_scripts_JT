@@ -145,8 +145,6 @@ dev.off()
    # "osteoclast proliferation", 
    # "endothelial cell chemotaxis", 
    # "negative regulation of chemotaxis")
-
-
 ```
 
 ```{r}
