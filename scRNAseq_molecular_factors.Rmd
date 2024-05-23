@@ -1,0 +1,153 @@
+---
+title: "Biological_features_analysis"
+author: "Jiabao Tian"
+date: "2023-09-12"
+output: html_document
+---
+
+################################################################################
+############ Gene set enrichement analysis (GSEA) - Gene Ontology ##############
+################################################################################
+
+```{r}
+set.seed(999)
+setwd("F:/Jane/CP_output")
+```
+
+```{r}
+# install and load packages
+BiocManager::install("clusterProfiler")
+BiocManager::install("pathview")
+BiocManager::install("enrichplot")
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+
+# Annotation installing and loading
+organism <- "org.Hs.eg.db"
+BiocManager::install(organism, character.only = T)
+library(organism, character.only = T)
+```
+
+```{r}
+# Prepare input
+
+# Reading in the csv.files (DEGs of all cell types <with Log2FoldChange>)
+df <- read.table("F:/Jane/CP_output/Tex_DEG_grp.txt", sep="\t", header = T)
+
+# Set thresholds
+pvalue_cutoff <- 0.05
+
+# Subset the significant results
+df <- dplyr::filter(df, p_val < pvalue_cutoff) %>%
+  dplyr::arrange(p_val)
+# sig_res <- dplyr::filter(res_tbl, log2FoldChange > 3 | log2FoldChange < -3, ) %>%
+#   dplyr::arrange(log2FoldChange)
+
+# Check significant genes output
+df
+
+# Log2fold change is required for each gene - to identify upregulated/downregulated pathways
+original_gene_list <- df$avg_log2FC 
+
+# Name the vector
+names(original_gene_list) <- df$X
+
+# Omit any NA values
+gene_list <- na.omit(original_gene_list)
+
+# Sort the list in decreasing order (required for CP)
+gene_list <- sort(gene_list, decreasing = T)
+
+# positive_values <- df[df$avg_log2FC > 0, ]
+# write.table(positive_values, 
+#             file="F:/Jane/CP_output/Tex_DEG_up.txt", 
+#             sep="\t", col.names = NA)
+```
+
+```{r}
+# GSE via GO
+gse <- gseGO(geneList = gene_list,
+               ont = c("BP"), 
+             keyType = "SYMBOL", 
+             minGSSize = 3, # adjustable
+             maxGSSize = 600, # adjustable
+             verbose = TRUE, 
+             OrgDb = organism, 
+             pvalueCutoff = 0.05,
+             pAdjustMethod = "none",
+             by = "fgsea")
+
+# library(org.Hs.eg.db)
+# # Example: Convert gene symbols to GO IDs
+# gene_symbols <- df$X
+# 
+# # Convert gene symbols to GO IDs using the "SYMBOL" keytype
+# go_ids <- select(org.Hs.eg.db, keys = gene_symbols, columns = "GO", keytype = "SYMBOL")
+# 
+# # View the resulting GO IDs
+# head(go_ids, n=100)
+```
+
+```{r}
+# gse - Dotplot
+
+# DOSE installing and loading 
+### DOSE is a package computes semantic similarties among DO terms and gene products (ref. RDocumentation)
+### Functions in DOSE include: dotplot, enrichment map etc.
+### Check if DOSE is available by
+# if(!require(DOSE, character.only = TRUE)) { 
+#      install.packages("DOSE")
+#      library(DOSE)
+# }
+BiocManager::install("DOSE")
+library(DOSE)
+
+results <- setReadable(gse, OrgDb = "org.Hs.eg.db", keyType="SYMBOL")
+write.table(results, 
+            file="F:/Jane/CP_output/results_table/Tex_BPresults.txt", 
+            sep="\t", col.names = NA)
+
+# png("F:/Jane/CP_output/updated_plots/dot_cnet_grp/dotplot_Th_grp_MF.png", width = 15, height = 8, units = "cm", res = 300)
+dotplot(gse, showCategory = 5)
+# dotplot(gse, showCategory = 5, split = ".sign") + facet_grid(.~.sign)
+dev.off()
+```
+
+```{r}
+# gse - Enrichment map
+gse <- pairwise_termsim(gse)
+emapplot(gse, showCategory = 10)
+```
+
+```{r}
+install.packages("ggraph", version = "2.1.0")
+library(ggraph)
+
+# gse - Category Netplot
+min.value <- 0
+max.value <- 3
+svg("F:/Jane/CP_output/updated_plots/cnet_Treg_BP.svg", width = 12, height = 11)
+categories <- c("T cell tolerance induction", "T-helper 17 type immune response", "T-helper 17 cell differentiation", "I-kappaB kinase/NF-kappaB signaling", "regulation of DNA-binding transcription factor activity")
+cnetplot(gse, categorySize = "pvalue", foldChange = gene_list, showCategory = categories, node_label = "all", cex_label_category = NULL, cex_label_gene = 2, color_category = "blue") + scale_colour_gradient2(name = "fold change", mid = "white", high = "red",limits= c(min.value, max.value)) 
+# + geom_node_text(aes_(label = ~name), repel = TRUE)
+dev.off()
+
+# Treg vs non-tumour
+## "T cell tolerance induction", "T-helper 17 type immune response", "T-helper 17 cell differentiation", "I-kappaB kinase/NF-kappaB signaling", "regulation of DNA-binding transcription factor activity"
+
+# Tex vs non-tumour
+# "antigen processing and presentation of exogenous peptide antigen", "antigen processing and presentation of peptide antigen via MHC class II", "antigen processing and presentation of peptide or polysaccharide antigen via MHC class II", "leukocyte mediated immunity", "lymphocyte mediated immunity"
+
+# Th vs non-tumour
+# ("sensory percetion", 
+   # "cellular carbohydrate metabolic process", 
+   # "osteoclast proliferation", 
+   # "endothelial cell chemotaxis", 
+   # "negative regulation of chemotaxis")
+```
+
+```{r}
+# gse - Ridgeplot
+ridgeplot(gse) + labs(x = "enrichment distribution")
+```
