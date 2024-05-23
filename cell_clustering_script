@@ -1,17 +1,24 @@
-Title: "Cell_cluster_annotations"
+
 ---
-title: "ITM_T_subcluster_annotations"
+title: "ITM_cell_cluster_annotations"
 author: "Jiabao Tian"
 date: "2023-08-21"
 output: html_document
 ---
 
 ```{r}
+# set seed and work directory
 set.seed(999)
-#setwd("F:/ITM_data/single_cell")
+setwd("F:/ITM_data/single_cell")
 ```
 
 ```{r}
+# install packages
+install.packages("tidyverse", "MAST", "harmony", "Seurat", "ggplot2", "dittoSeq", "RColorBrewer", "miloR", "scater", "scran", "dplyr", "patchwork")
+```
+
+```{r}
+# Load library
 library(tidyverse)
 library(MAST)
 library(harmony)
@@ -27,6 +34,7 @@ library(patchwork)
 ```
 
 ```{r}
+# data import and subset only T cells
 seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
 T_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Tcell"))
 T_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Tcells_V2.rds")
@@ -34,71 +42,30 @@ DefaultAssay(T_obj) <- "RNA"
 ```
 
 ```{r}
-#reso_range <- c(seq(0.2, 1.6, 0.2))
-#T_obj <- FindClusters(T_obj, resolution = reso_range, graph.name = "subcluster")
+# dimensionality reduction via UMAP of T cells
+reso_range <- c(seq(0.2, 1.6, 0.2))
 Idents(T_obj) <- "subcluster_res.0.6"
 T.umap <- DimPlot(T_obj, reduction = "subcluster.umap", label = TRUE)
 ```
 
 ```{r}
+# identify cellular features using feature plot
 T_feature <- FeaturePlot(T_obj, features = c("CD3E", "CD3D", "CD3G", "CD4", "ADT.CD4.RPA.T4", "CD8A", "ADT.CD8"), pt.size = 0.5)
 umap <- DimPlot(T_obj, reduction = "subcluster.umap", label = TRUE)
-
-plot <- umap + T_feature
-ggsave(plot, file = paste0("plots/tcells/T_featureplot.png"), width = 30, height = 16)
+T_feature_plot <- umap + T_feature
+ggsave(T_feature_plot, file = paste0("plots/tcells/T_feature_plot.png"), width = 30, height = 16)
 ```
 
 ```{r}
-#features plot
-Tcell_features <- FeaturePlot(T_obj, features = c("ADT.CD3.UCHT1","FOXP3","ADT.CD25","ADT.CD8","CD8A","ADT.CD4.RPA.T4","CD4","IFNG","CXCL13","PDCD1","ADT.CD45RO","ADT.CX3CR1","ADT.CD39","ADT.CD279","CTLA4","HAVCR2","XCL1","GZMB","TRBC1","TRDC","TRGC1","TRAC","ADT.TCR.AB","ADT.TCR.Va7.2","ADT.HLA.DR","ADT.GPR56","ADT.CD103","ADT.LOX.1"), pt.size = 0.5)
-ggsave(Tcell_features, file = paste0("plots/tcells/featureplot.png"), width = 14, height = 20)
+# identify cellular features using violin plots
+violin_plot <- VlnPlot(T_obj, features = c("ADT.CD3.UCHT1","FOXP3","ADT.CD25","ADT.CD8","CD8A","ADT.CD4.RPA.T4","CD4","IFNG","CXCL13","PDCD1","ADT.CD45RO","ADT.CX3CR1","ADT.CD39","ADT.CD279","CTLA4","HAVCR2","XCL1","GZMB","TRBC1","TRDC","TRGC1","TRAC","ADT.TCR.AB","ADT.TCR.Va7.2","ADT.HLA.DR","ADT.GPR56","ADT.CD103","ADT.LOX.1"),pt.size = 0, group.by = "subcluster_res.0.6")
+ggsave(violin_plot, file = paste0("plots/tcells/Violinplot.png"), width = 14, height = 20)
 ```
 
 ```{r}
-plot <- VlnPlot(T_obj, features = c("ADT.CD3.UCHT1","FOXP3","ADT.CD25","ADT.CD8","CD8A","ADT.CD4.RPA.T4","CD4","IFNG","CXCL13","PDCD1","ADT.CD45RO","ADT.CX3CR1","ADT.CD39","ADT.CD279","CTLA4","HAVCR2","XCL1","GZMB","TRBC1","TRDC","TRGC1","TRAC","ADT.TCR.AB","ADT.TCR.Va7.2","ADT.HLA.DR","ADT.GPR56","ADT.CD103","ADT.LOX.1"),pt.size = 0, group.by = "subcluster_res.0.6")
-ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 14, height = 20)
-```
-
-########################################################
-```{r}
-# Violin plots focusing on C_08
-plot <- VlnPlot(T_obj, features = c("CD44","EGFR","MMP2","MMP9", "VEGF", "PRKCA", "PIK3CA", "AKT1", "HIF1A"), split.by = "Patient_group_name", pt.size = 0.5, group.by = "subcluster_res.0.6")
-plot
-ggsave(plot, file = paste0("plots/tcells/Violinplot.png"), width = 30, height = 20)
-```
-########################################################
-
-```{r}
-#features plot_CD8
-CD8_Tcell_features <- FeaturePlot(T_obj, features = c("CD69", "IL2RA", "ADT. CD25", "GZMB", "PRF1", "PTPRC", "ADT.CD45RA", "ADT.CD45RO", "ADT.CD62L", "SELL", "CCR7", "TCF7", "PDCD1", "HAVCR2", "LAG3", "TOX", "TOX2", "TIGIT", "VCAM1", "APOE", "APOD"), pt.size = 0.5)
-# CD8_Tcell_features_ex.markers <- FeaturePlot(T_obj, features = c("PDCD1", "HAVCR2", "LAG3"), split.by = "Patient_group_name", pt.size = 0.5)
-
-ggsave(CD8_Tcell_features, file = paste0("plots/tcells/CD8.featureplot.png"), width = 22, height = 20)
-# ggsave(CD8_Tcell_features_ex.markers, file = paste0("plots/tcells/CD8.featureplot.ex.png"), width = 22, height = 20)
-
-```
-
-```{r}
-CD4_Tcell_features <- FeaturePlot(T_obj, features = c("TBX21", "IFNG", "GATA3", "IL4", "RORC", "IL17A", "FOXP3", "IL2RA", "BCL6", "CXCR5", "IL21", "CCR7", "PDCD1", "ICOS", "SH2D1A"), pt.size = 0.5)
-ggsave(CD4_Tcell_features, file = paste0("plots/tcells/CD4.featureplot.png"), width = 22, height = 18)
-```
-
-```{r}
-other_Tcell_features <- FeaturePlot(T_obj, features = c("TRAC", "TRBC1", "TRDC", "TRGC1", "ADT.TCR.Va7.2", "ADT.TCR.AB", ".ADT.TCR.Vd2", "NCAM1"), pt.size = 0.5)
-ggsave(other_Tcell_features, file = paste0("plots/tcells/other.featureplot.png"), width = 22, height = 14)
-```
-
-```{r}
-# Define custom markers for 0.6 AFTER features/violin plot
+# define custom markers for 0.6 AFTER features/violin plot
 mast_T <- FindAllMarkers(T_obj, test.use = "MAST", only.pos = T)
 write.csv(mast_T, file = "mast_DGE_T_cells_res0.6.csv")
-mast_T_top30 <- mast_T %>%
-                group_by(cluster) %>%
-                top_n(n = 30, wt = avg_log2FC)
-write.csv(mast_T_top30, file = "mast_T_obj_top30_res0.6.csv")
-```
-
-```{r}
 mast_T_top5 <- mast_T %>%
                 group_by(cluster) %>%
                 top_n(n = 5, wt = avg_log2FC)
@@ -107,15 +74,7 @@ ggsave(T_hmap, file = paste0("plots/tcells/T_cells_hmap_res0.6.png"), width = 12
 ```
 
 ```{r}
-mast_T_top5 <- mast_T %>%
-                group_by(cluster) %>%
-                top_n(n = 5, wt = avg_log2FC)
-T_hmap <- DoHeatmap(T_obj, features = mast_T_top5$gene) + theme(text = element_text(size = 12), legend.text = element_text(size = 15))
-ggsave(T_hmap, file = paste0("plots/tcells/T_cells_hmap_res0.6_de.png"), width = 12, height = 12)
-```
-
-```{r}
-#annotation manually and load in .csv file ###
+# manual annotation and load in .csv file
 Idents(T_obj) <- "subcluster_res.0.6"
 name_sheet <- read.csv(file = "ITM_cluster_names_tcells_CJ.csv", header = T, sep = ",", row.names = 1)
 to <- as.character(name_sheet$subset) # changing to
@@ -128,16 +87,18 @@ ggsave("plots/tcells/T.umap.jpeg", T.umap, width = 20, height = 12)
 ```
 
 ```{r}
-# Draw dotplot
+# draw dotplot
 Clustered_DotPlot(seurat_object = T_obj_PRE, features = mast_T_top5$gene, colors_use_exp = BlueAndRed(), exp_color_min = -2, exp_color_max = 2)
 ggsave(filename = "F:Jane/Fig.1/Figure_1b.png", width = 18, height = 12)
 ```
 
 ```{r}
+# draw ditto bar plot
 DimPlot(T_obj, reduction = "subcluster.umap", split.by = "Patient_group_name")
 T_obj@meta.data$T_subcluster.anno <- Idents(T_obj)
 T_bar <- dittoBarPlot(object = T_obj, var = "T_subcluster.anno", group.by = "SAMPLE_ID", scale = "percent", split.ncol = 2, main="T_subclusters")
 ggsave(T_bar, file = paste0("plots/tcells/T_cells_stackedbar.png"), width = 13, height = 10)
+```
 
 ---
 title: "ITM_Myeloid_subcluster_annotations"
@@ -145,9 +106,10 @@ author: "Jane Tian"
 date: "2023-08-21"
 output: html_document
 ---
+
 ```{r}
-# seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
-# Myeloid_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
+seurat_obj_allcells <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_099_001_anno_V2.rds")
+Myeloid_obj <- subset(x = seurat_obj_allcells, subset = Celltype_major == c("Myeloid"))
 M_obj <- readRDS("F:/ITM_data/single_cell/ITM_harmony_integrated_clean_Mcells.rds")
 M_obj.PRE <- subset(M_obj, TREATMENT_TIME %in% "PRE")
 M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$SAMPLE_ID %in% c("patient_ID_1", "patient_ID_2")]
@@ -239,6 +201,7 @@ cluster_ident = FALSE,
                   x_lab_rotate = TRUE)
 dev.off()
 ```
+
 ---
 title: "ITM_B_subcluster_annotations"
 author: "Jane Tian"
@@ -315,3 +278,4 @@ cluster_ident = FALSE,
                   x_lab_rotate = TRUE)
 dev.off()
 ```
+
