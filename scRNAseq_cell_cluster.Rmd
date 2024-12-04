@@ -1,6 +1,6 @@
 
 ---
-title: "ITM_cell_cluster_annotations"
+title: "ITM_Tcell_cluster_annotations"
 author: "Jiabao Tian"
 date: "2023-08-21"
 output: html_document
@@ -63,7 +63,7 @@ ggsave(violin_plot, file = paste0("plots/tcells/Violinplot.png"), width = 14, he
 ```
 
 ```{r}
-# define custom markers for 0.6 AFTER features/violin plot
+# define custom markers for 0.6
 mast_T <- FindAllMarkers(T_obj, test.use = "MAST", only.pos = T)
 write.csv(mast_T, file = "mast_DGE_T_cells_res0.6.csv")
 mast_T_top5 <- mast_T %>%
@@ -87,7 +87,7 @@ ggsave("plots/tcells/T.umap.jpeg", T.umap, width = 20, height = 12)
 ```
 
 ```{r}
-# draw dotplot
+# dotplot
 Clustered_DotPlot(seurat_object = T_obj_PRE, features = mast_T_top5$gene, colors_use_exp = BlueAndRed(), exp_color_min = -2, exp_color_max = 2)
 ggsave(filename = "F:Jane/Fig.1/Figure_1b.png", width = 18, height = 12)
 ```
