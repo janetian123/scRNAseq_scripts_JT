@@ -115,7 +115,6 @@ M_obj.PRE <- subset(M_obj, TREATMENT_TIME %in% "PRE")
 M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$SAMPLE_ID %in% c("patient_ID_1", "patient_ID_2")]
 M_obj.PRE <- M_obj.PRE[,!M_obj.PRE$subcluster_res.0.6 %in% c("4")]
 DefaultAssay(M_obj.PRE) <- "RNA"
-
 ```
 
 ```{r}
@@ -154,8 +153,9 @@ M_obj.PRE[["subset"]] <- Idents(object = M_obj.PRE)
 M.umap <- DimPlot(M_obj.PRE, reduction = "subcluster.umap", pt.size = 0.5, cols = "Paired", label = F, label.size = 7) + theme(legend.text = element_text(size = 20), axis.title = element_text(size = 25), axis.text = element_text(size = 25))
 ggsave("plots/M_obj.PRE/M.umap.jpeg", M.umap, width = 20, height = 12)
 ```
+
 ```{r}
-# Draw dotplot
+# Dotplot
 # mast_M %>%
 #     group_by(cluster) %>%
 #     top_n(n = 5, wt = avg_log2FC) -> top5
